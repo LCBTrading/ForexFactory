@@ -21,11 +21,11 @@ RUN wget -q https://packages.microsoft.com/keys/microsoft.asc -O- | apt-key add 
     echo "deb [arch=amd64] https://packages.microsoft.com/repos/edge stable main" > /etc/apt/sources.list.d/microsoft-edge.list && \
     apt-get update && apt-get install -y microsoft-edge-stable
 
-# Download and install msedgedriver manually using the latest release version
-RUN wget -q "https://msedgedriver.azureedge.net/LATEST_RELEASE" -O msedge_latest.txt && \
-    EDGE_VERSION=$(cat msedge_latest.txt) && \
-    echo "Using msedgedriver version: $EDGE_VERSION" && \
-    wget -q "https://msedgedriver.azureedge.net/${EDGE_VERSION}/edgedriver_linux64.zip" -O edgedriver.zip && \
+# Set a fixed version for msedgedriver (update as needed)
+ENV EDGE_DRIVER_VERSION=133.0.3065.69
+
+# Download and install msedgedriver
+RUN wget -q "https://msedgedriver.azureedge.net/${EDGE_DRIVER_VERSION}/edgedriver_linux64.zip" -O edgedriver.zip && \
     unzip edgedriver.zip && \
     rm edgedriver.zip && \
     mv msedgedriver /usr/bin/ && \
