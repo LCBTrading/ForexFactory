@@ -9,6 +9,7 @@ import csv
 import io
 import re
 import pyjson5  # Ensure you have installed pyjson5 via "pip install pyjson5"
+import shutil
 
 app = Flask(__name__)
 
@@ -18,9 +19,7 @@ def clean_json_str(s):
     wrapping pure data. This function uses a regular expression to
     replace instances of Object.freeze({...}) with just the inner object.
     """
-    # This regex uses DOTALL so that the inner object (including newlines) is captured.
     pattern = r'Object\.freeze\(\s*(\{.*?\})\s*\)'
-    # Use a loop in case there are multiple nested occurrences.
     while re.search(pattern, s, flags=re.DOTALL):
         s = re.sub(pattern, r'\1', s, flags=re.DOTALL)
     return s
@@ -48,8 +47,10 @@ def fetch_forex_factory_data():
         "AppleWebKit/537.36 (KHTML, like Gecko) Edge/115.0.0.0"
     )
 
-    # Replace with the actual path to your msedgedriver.exe
-    driver_path = r"C:\Tools\msedgedriver.exe"
+    # Look up msedgedriver in the PATH (do not use a Windows path)
+    driver_path = shutil.which("msedgedriver")
+    if driver_path is None:
+        raise Exception("msedgedriver not found. Ensure that Microsoft Edge and msedgedriver are installed.")
     service = EdgeService(executable_path=driver_path)
     driver = webdriver.Edge(service=service, options=edge_options)
 
@@ -72,7 +73,6 @@ def fetch_forex_factory_data():
     start_index = html.find(marker)
     if start_index == -1:
         return "Error: Could not find the calendar JSON marker in the page."
-
     start_index += len(marker)
     end_index = html.find("};", start_index)
     if end_index == -1:
