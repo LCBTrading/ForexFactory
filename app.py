@@ -1,32 +1,44 @@
+from flask import Flask, Response
+from selenium import webdriver
+from selenium.webdriver.edge.options import Options as EdgeOptions
+from selenium.webdriver.edge.service import Service as EdgeService
+from bs4 import BeautifulSoup
+from datetime import datetime
+import time
+import csv
+import io
+import re
+import pyjson5
+import shutil
+
+app = Flask(__name__)
+
+def clean_json_str(s):
+    """
+    Remove any JavaScript function calls (like Object.freeze(...))
+    wrapping pure data.
+    """
+    pattern = r'Object\.freeze\(\s*(\{.*?\})\s*\)'
+    while re.search(pattern, s, flags=re.DOTALL):
+        s = re.sub(pattern, r'\1', s, flags=re.DOTALL)
+    return s
+
 def fetch_forex_factory_data():
     """
-    1) Launch Microsoft Edge in headless mode using Selenium.
-    2) Navigate to the Forex Factory Calendar.
-    3) Extract the JSON-like data from the page source.
-    4) Clean the extracted string to remove any extraneous JS code.
-    5) Parse the cleaned JSON5 data and filter for events where currency == 'USD'.
-    6) Build a properly formatted CSV with one header row: name, impactClass, timeLabel, date, currency.
-    7) Return the CSV as a string.
+    Launches Microsoft Edge in headless mode, scrapes the Forex Factory calendar,
+    and returns the filtered data as CSV.
     """
-
-    # ---------------------------------------------
-    # 1) Configure and start Selenium with Edge
-    # ---------------------------------------------
+    # Configure Edge options for stability in Docker
     edge_options = EdgeOptions()
-    edge_options.add_argument("--headless")                   # Run in headless mode.
+    edge_options.add_argument("--headless")
     edge_options.add_argument("--disable-gpu")
     edge_options.add_argument("--no-sandbox")
-    edge_options.add_argument("--disable-dev-shm-usage")        # Use /tmp instead of /dev/shm
-    # (Optional) Add additional flags if needed:
-    # edge_options.add_argument("--disable-extensions")
-    # edge_options.add_argument("--disable-infobars")
+    edge_options.add_argument("--disable-dev-shm-usage")
     edge_options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Edge/133.0.3065.69"
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/133.0.3065.69"
     )
 
-    # Use a dynamic lookup for msedgedriver (it should already be installed in your Docker container)
-    import shutil
+    # Look up msedgedriver in PATH
     driver_path = shutil.which("msedgedriver")
     if driver_path is None:
         raise Exception("msedgedriver not found. Ensure that Microsoft Edge and msedgedriver are installed.")
@@ -34,44 +46,28 @@ def fetch_forex_factory_data():
     driver = webdriver.Edge(service=service, options=edge_options)
 
     try:
-        # ---------------------------------------------
-        # 2) Navigate to the Forex Factory Calendar
-        # ---------------------------------------------
         url = "https://www.forexfactory.com/calendar"
         driver.get(url)
-        # Wait for the page to load and for dynamic content to appear.
+        # Wait for the page to load dynamic content
         time.sleep(15)
         html = driver.page_source
     finally:
         driver.quit()
 
-    # ---------------------------------------------
-    # 3) Extract JSON-like data from the page's HTML
-    # ---------------------------------------------
     marker = "window.calendarComponentStates[1] ="
     start_index = html.find(marker)
     if start_index == -1:
         return "Error: Could not find the calendar JSON marker in the page."
-
     start_index += len(marker)
     end_index = html.find("};", start_index)
     if end_index == -1:
         return "Error: Could not find the end of the calendar JSON data."
-    # Include the closing brace "}".
     json_str = html[start_index:end_index+1]
-
-    # ---------------------------------------------
-    # 4) Clean the extracted string to remove extraneous JavaScript code.
-    # ---------------------------------------------
     json_str = clean_json_str(json_str)
 
-    # ---------------------------------------------
-    # 5) Parse JSON5 & filter for currency == 'USD'
-    # ---------------------------------------------
     try:
         calendar_data = pyjson5.loads(json_str)
     except Exception as e:
-        # Save the raw JSON substring for debugging.
         with open("raw_calendar_data.json", "w", encoding="utf-8") as debug_file:
             debug_file.write(json_str)
         return f"Error parsing JSON: {e}. Raw JSON saved to raw_calendar_data.json for debugging."
@@ -80,17 +76,12 @@ def fetch_forex_factory_data():
     if not days:
         return "No calendar days found in JSON data."
 
-    # Prepare CSV output using StringIO.
     output = io.StringIO()
     fieldnames = ["name", "impactClass", "timeLabel", "date", "currency"]
     writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\n")
-    writer.writeheader()  # Write the header row once
+    writer.writeheader()
 
-    # ---------------------------------------------
-    # 6) Build the CSV rows filtering for USD events only.
-    # ---------------------------------------------
     for day in days:
-        # Determine the date string.
         dateline = day.get("dateline")
         if dateline:
             try:
@@ -106,13 +97,10 @@ def fetch_forex_factory_data():
             event_name = event.get("name", "").strip()
             event_impact_class = event.get("impactClass", "").strip()
             event_time_label = event.get("timeLabel", "").strip()
-            # Retrieve currency from "currency" or deduce from "prefixedName"
             event_currency = event.get("currency", "").strip()
             if not event_currency:
                 prefixed = event.get("prefixedName", "").strip()
                 event_currency = (prefixed.split()[0] if prefixed else "").strip()
-
-            # Filter: Include only events with currency "USD"
             if event_currency.upper() == "USD":
                 writer.writerow({
                     "name": event_name,
@@ -122,9 +110,17 @@ def fetch_forex_factory_data():
                     "currency": event_currency
                 })
 
-    # ---------------------------------------------
-    # 7) Return the CSV as a string.
-    # ---------------------------------------------
     csv_data = output.getvalue()
     output.close()
     return csv_data
+
+@app.route("/calendar")
+def calendar_endpoint():
+    try:
+        csv_data = fetch_forex_factory_data()
+        return Response(csv_data, mimetype="text/csv")
+    except Exception as e:
+        return Response(f"Error fetching data: {e}", status=500)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
