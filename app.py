@@ -1,29 +1,3 @@
-from flask import Flask, Response
-from selenium import webdriver
-from selenium.webdriver.edge.options import Options as EdgeOptions
-from selenium.webdriver.edge.service import Service as EdgeService
-from bs4 import BeautifulSoup
-from datetime import datetime
-import time
-import csv
-import io
-import re
-import pyjson5  # Ensure you have installed pyjson5 via "pip install pyjson5"
-import shutil
-
-app = Flask(__name__)
-
-def clean_json_str(s):
-    """
-    Remove any JavaScript function calls (like Object.freeze(...))
-    wrapping pure data. This function uses a regular expression to
-    replace instances of Object.freeze({...}) with just the inner object.
-    """
-    pattern = r'Object\.freeze\(\s*(\{.*?\})\s*\)'
-    while re.search(pattern, s, flags=re.DOTALL):
-        s = re.sub(pattern, r'\1', s, flags=re.DOTALL)
-    return s
-
 def fetch_forex_factory_data():
     """
     1) Launch Microsoft Edge in headless mode using Selenium.
@@ -39,15 +13,20 @@ def fetch_forex_factory_data():
     # 1) Configure and start Selenium with Edge
     # ---------------------------------------------
     edge_options = EdgeOptions()
-    edge_options.add_argument("--headless")        # Run in headless mode.
+    edge_options.add_argument("--headless")                   # Run in headless mode.
     edge_options.add_argument("--disable-gpu")
     edge_options.add_argument("--no-sandbox")
+    edge_options.add_argument("--disable-dev-shm-usage")        # Use /tmp instead of /dev/shm
+    # (Optional) Add additional flags if needed:
+    # edge_options.add_argument("--disable-extensions")
+    # edge_options.add_argument("--disable-infobars")
     edge_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Edge/115.0.0.0"
+        "AppleWebKit/537.36 (KHTML, like Gecko) Edge/133.0.3065.69"
     )
 
-    # Look up msedgedriver in the PATH (do not use a Windows path)
+    # Use a dynamic lookup for msedgedriver (it should already be installed in your Docker container)
+    import shutil
     driver_path = shutil.which("msedgedriver")
     if driver_path is None:
         raise Exception("msedgedriver not found. Ensure that Microsoft Edge and msedgedriver are installed.")
@@ -73,6 +52,7 @@ def fetch_forex_factory_data():
     start_index = html.find(marker)
     if start_index == -1:
         return "Error: Could not find the calendar JSON marker in the page."
+
     start_index += len(marker)
     end_index = html.find("};", start_index)
     if end_index == -1:
@@ -148,14 +128,3 @@ def fetch_forex_factory_data():
     csv_data = output.getvalue()
     output.close()
     return csv_data
-
-@app.route("/calendar")
-def calendar_endpoint():
-    try:
-        csv_data = fetch_forex_factory_data()
-        return Response(csv_data, mimetype="text/csv")
-    except Exception as e:
-        return Response(f"Error fetching data: {e}", status=500)
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
