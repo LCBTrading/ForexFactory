@@ -1,17 +1,18 @@
-from flask import Flask, Response
-import io
+# Use an official Python runtime as a parent image
+FROM python:3.9-slim
 
-app = Flask(__name__)
+# Set the working directory
+WORKDIR /app
 
-@app.route("/calendar")
-def calendar_endpoint():
-    try:
-        # Read the data from the CSV file that was updated manually
-        with open("data.csv", "r", encoding="utf-8") as f:
-            csv_data = f.read()
-        return Response(csv_data, mimetype="text/csv")
-    except Exception as e:
-        return Response(f"Error fetching data: {e}", status=500)
+# Copy the requirements file and install dependencies
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+# Copy the rest of the application code (including data.csv and app.py)
+COPY . .
+
+# Expose port 5000 for the Flask app
+EXPOSE 5000
+
+# Start the application with Gunicorn
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:5000"]
