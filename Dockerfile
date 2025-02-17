@@ -1,7 +1,7 @@
 # Use an official Python runtime as a parent image
 FROM python:3.9-slim
 
-# Install dependencies required for Edge
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -13,24 +13,34 @@ RUN apt-get update && apt-get install -y \
     libxkbcommon0 \
     libxss1 \
     libasound2 \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Microsoft Edge
+# Add Microsoft repository and install Microsoft Edge
 RUN wget -q https://packages.microsoft.com/keys/microsoft.asc -O- | apt-key add - && \
     echo "deb [arch=amd64] https://packages.microsoft.com/repos/edge stable main" > /etc/apt/sources.list.d/microsoft-edge.list && \
     apt-get update && apt-get install -y microsoft-edge-stable
 
-# Install msedgedriver (if available via apt)
-RUN apt-get install -y msedgedriver
+# Download and install msedgedriver manually
+# 1. Get the installed Edge version.
+# 2. Download the matching msedgedriver zip.
+# 3. Unzip, move to /usr/bin, and make it executable.
+RUN EDGE_VERSION=$(microsoft-edge --version | sed 's/.* //') && \
+    echo "Microsoft Edge version: $EDGE_VERSION" && \
+    wget -q "https://msedgedriver.azureedge.net/${EDGE_VERSION}/edgedriver_linux64.zip" -O edgedriver.zip && \
+    unzip edgedriver.zip && \
+    rm edgedriver.zip && \
+    mv msedgedriver /usr/bin/ && \
+    chmod +x /usr/bin/msedgedriver
 
-# Set the working directory in the container
+# Set the working directory
 WORKDIR /app
 
-# Copy the requirements file and install Python dependencies
+# Copy requirements.txt and install Python dependencies
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Copy the rest of the application code
+# Copy the rest of your application code
 COPY . .
 
 # Expose port 5000 for the Flask app
