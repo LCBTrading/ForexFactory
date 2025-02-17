@@ -1,5 +1,2 @@
 flask
-selenium
-beautifulsoup4
-pyjson5
 gunicorn
